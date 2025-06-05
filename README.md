@@ -2,7 +2,7 @@
 
 Hệ thống giám sát an toàn mũ bảo hộ sử dụng ESP32 và ESP8266 kết nối qua MQTT, tích hợp hiển thị dữ liệu thời gian thực qua Blynk.
 
-## 🛠 Thiết bị phần cứng
+##  Thiết bị phần cứng
 
 ### Sender (ESP32)
 - **DHT11**: đo nhiệt độ và độ ẩm.
@@ -19,7 +19,7 @@ Hệ thống giám sát an toàn mũ bảo hộ sử dụng ESP32 và ESP8266 k�
 - **Buzzer cảnh báo** (D0)
 - **MQTT + Blynk**: hiển thị dữ liệu và cảnh báo.
 
-## 🧠 Chức năng chính
+##  Chức năng chính
 
 - Gửi dữ liệu từ ESP32 đến ESP8266 qua MQTT:
   - Nhiệt độ, độ ẩm, trạng thái khí gas, lực va chạm, trạng thái đội mũ.
@@ -29,7 +29,7 @@ Hệ thống giám sát an toàn mũ bảo hộ sử dụng ESP32 và ESP8266 k�
   - Cho phép gửi lệnh điều khiển lại sang ESP32 (bằng nút nhấn hoặc Blynk).
 - Tự động chọn mạng WiFi có tín hiệu mạnh nhất từ danh sách cấu hình.
 
-## 📡 Giao tiếp
+##  Giao tiếp
 
 - **Giao thức**: MQTT (qua TLS/SSL).
 - **Broker**: HiveMQ Cloud.
@@ -41,7 +41,7 @@ Hệ thống giám sát an toàn mũ bảo hộ sử dụng ESP32 và ESP8266 k�
   - `helmet/receiver/request`: ESP8266 gửi yêu cầu đến ESP32.
   - `helmet/sender/wifi_status`: SSID mà ESP32 đang kết nối.
 
-## 📲 Blynk Dashboard
+##  Blynk Dashboard
 
 Các chân ảo sử dụng:
 - `V0`: Nhiệt độ.
