@@ -1,39 +1,56 @@
 # Safety-helmet
 
-**Safety-helmet** là hệ thống giám sát thông minh sử dụng ESP8266 nhằm bảo vệ người lao động trong môi trường công nghiệp. Hệ thống này phát hiện khí gas, kiểm tra trạng thái đội mũ bảo hộ, và cảnh báo va chạm thông qua kết nối WiFi, MQTT và tích hợp giao diện người dùng với Blynk.
+Hệ thống giám sát an toàn mũ bảo hộ sử dụng ESP32 và ESP8266 kết nối qua MQTT, tích hợp hiển thị dữ liệu thời gian thực qua Blynk.
 
----
+## 🛠 Thiết bị phần cứng
 
-## 📦 Chức năng chính
+### Sender (ESP32)
+- **DHT11**: đo nhiệt độ và độ ẩm.
+- **MQ2**: phát hiện khí gas.
+- **FSR (Force Sensor)**: phát hiện lực tác động.
+- **Cảm biến đội mũ**: phát hiện mũ có được đội hay không.
+- **Nút nhấn vật lý**: gửi tín hiệu SOS.
+- **WiFi + MQTT**: gửi dữ liệu đến ESP8266.
 
-- 🔥 Phát hiện khí gas theo thời gian thực
-- 🧠 Giám sát trạng thái đội mũ bảo hộ
-- 🌡️ Theo dõi nhiệt độ và độ ẩm (nhận từ node sender)
-- 🛑 Nút khẩn cấp thủ công để gửi cảnh báo
-- 📲 Tích hợp Blynk hiển thị thông số và cảnh báo
-- 📡 Tự động kết nối mạng WiFi mạnh nhất
-- 🔔 Báo động bằng đèn LED và còi
+### Receiver (ESP8266)
+- **LED cảnh báo nhiệt độ/độ ẩm/đội mũ** (D1)
+- **LED phản hồi nút nhấn** (D2)
+- **LED nhấp nháy cảnh báo** (D7)
+- **Buzzer cảnh báo** (D0)
+- **MQTT + Blynk**: hiển thị dữ liệu và cảnh báo.
 
----
+## 🧠 Chức năng chính
 
-## 🧰 Phần cứng (Receiver)
+- Gửi dữ liệu từ ESP32 đến ESP8266 qua MQTT:
+  - Nhiệt độ, độ ẩm, trạng thái khí gas, lực va chạm, trạng thái đội mũ.
+- ESP8266:
+  - Hiển thị dữ liệu trên Blynk (temperature, humidity, gas, force, mũ đội).
+  - Cảnh báo bằng LED và Buzzer khi có sự cố (gas, va chạm, không đội mũ).
+  - Cho phép gửi lệnh điều khiển lại sang ESP32 (bằng nút nhấn hoặc Blynk).
+- Tự động chọn mạng WiFi có tín hiệu mạnh nhất từ danh sách cấu hình.
 
-- Esp32 (Sender)
-- ESP8266 (receiver)
-- buzzer (D0)
-- LED báo hiệu (D1, D2, D7)
-- Nút nhấn khẩn cấp (D3)
-- Kết nối WiFi
+## 📡 Giao tiếp
 
----
+- **Giao thức**: MQTT (qua TLS/SSL).
+- **Broker**: HiveMQ Cloud.
+- **Chủ đề (MQTT topics)**:
+  - `helmet/sender/data`: dữ liệu sensor từ ESP32.
+  - `helmet/sender/status`: trạng thái nút nhấn từ ESP32.
+  - `helmet/sender/alert`: cảnh báo từ ESP32.
+  - `helmet/sender/ledcontrol`: lệnh điều khiển thủ công.
+  - `helmet/receiver/request`: ESP8266 gửi yêu cầu đến ESP32.
+  - `helmet/sender/wifi_status`: SSID mà ESP32 đang kết nối.
 
-## 🌐 WiFi cấu hình
+## 📲 Blynk Dashboard
 
-Receiver sẽ tự động quét và kết nối với mạng WiFi mạnh nhất từ danh sách đã lưu:
+Các chân ảo sử dụng:
+- `V0`: Nhiệt độ.
+- `V1`: Độ ẩm.
+- `V2`: Trạng thái khí gas.
+- `V3`: Trạng thái LED mũ bảo hộ.
+- `V4`: Giá trị FSR (lực).
+- `V5`: Cảnh báo tổng hợp.
+- `V6`: Nút điều khiển từ xa (gửi từ Blynk đến ESP32).
 
-```cpp
-KnownNetwork knownNetworks[] = {
-  {"Goldenland P402", "golden1234"},
-  {"WIFI_B", "password123"},
-  {"A1306", "thanha1306"}
-};
+## 🧾 Cấu trúc thư mục
+
