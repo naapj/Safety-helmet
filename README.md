@@ -18,8 +18,9 @@
 
 ## 🧰 Phần cứng (Receiver)
 
-- ESP8266 (NodeMCU)
-- Còi (D0)
+- Esp32 (Sender)
+- ESP8266 (receiver)
+- buzzer (D0)
 - LED báo hiệu (D1, D2, D7)
 - Nút nhấn khẩn cấp (D3)
 - Kết nối WiFi
