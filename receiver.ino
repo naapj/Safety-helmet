@@ -38,10 +38,7 @@ const char* mqtt_password = "Long1234";
 #define TOPIC_MANUAL_TRIGGER "helmet/sender/ledcontrol"
 #define TOPIC_BUTTON_R "helmet/receiver/request"
 #define TOPIC_ALERT "helmet/sender/alert"
-
-// Google Apps Script Web App URL
-const char* googleScriptURL = "script.google.com";
-const char* googleScriptPath = "/macros/s/AKfycbwfE1L7zq6TZSROIQA3xy-Zg2lt1P_4e-4EBtvRxmHpbxYtcDSv0pIpt70Ien5cKRVh/exec";
+#define TOPIC_WIFI_STATUS "helmet/sender/wifi_status"
 
 WiFiClientSecure espClient;
 PubSubClient client(espClient);
@@ -52,69 +49,14 @@ const int blinkInterval = 150;
 bool lastHelmetWorn = true;
 unsigned long lastHelmetWornAlertTime = 0;
 const unsigned long helmetWornAlertDebounce = 1000;
-bool gasDetected = false; // Track gas detection status
-
-// Function to URL encode a string
-String urlEncode(String str) {
-  String encodedString = "";
-  char c;
-  char code0;
-  char code1;
-  for (unsigned int i = 0; i < str.length(); i++) {
-    c = str.charAt(i);
-    if (c == ' ') {
-      encodedString += '+';
-    } else if (isalnum(c)) {
-      encodedString += c;
-    } else {
-      code1 = (c & 0xf) + '0';
-      if ((c & 0xf) > 9) {
-        code1 = (c & 0xf) - 10 + 'A';
-      }
-      c = (c >> 4) & 0xf;
-      code0 = c + '0';
-      if (c > 9) {
-        code0 = c - 10 + 'A';
-      }
-      encodedString += '%';
-      encodedString += code0;
-      encodedString += code1;
-    }
-  }
-  return encodedString;
-}
-
-// Function to send data to Google Sheet
-void sendToGoogleSheet(String dataType, String data) {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("❌ [Google Sheet] WiFi not connected, cannot send data");
-    return;
-  }
-
-  // URL encode the data to handle special characters
-  String encodedData = urlEncode(data);
-  String encodedDataType = urlEncode(dataType);
-
-  if (espClient.connect(googleScriptURL, 443)) {
-    String url = String(googleScriptPath) + "?dataType=" + encodedDataType + "&data=" + encodedData;
-    Serial.println("[Google Sheet] Sending request: " + url);
-    espClient.print(String("GET ") + url + " HTTP/1.1\r\n" +
-                   "Host: " + googleScriptURL + "\r\n" +
-                   "Connection: close\r\n\r\n");
-    while (espClient.connected()) {
-      String line = espClient.readStringUntil('\n');
-      if (line == "\r") break;
-    }
-    String response = espClient.readString();
-    Serial.println("[Google Sheet] Response: " + response);
-  } else {
-    Serial.println("❌ [Google Sheet] Connection to Google Script failed");
-  }
-  espClient.stop();
-}
+bool gasDetected = false;
+String senderSSID = ""; // Lưu SSID của sender
+unsigned long lastWiFiStatusPrint = 0;
+const unsigned long WIFI_STATUS_INTERVAL = 10000; // 10s
+String currentSSID = ""; // Lưu SSID hiện tại của receiver
 
 void connectBestWiFi() {
-  Serial.println("🔍 Scanning WiFi...");
+  Serial.println("🔍 [WiFi] Scanning...");
   int n = WiFi.scanNetworks();
   int bestIndex = -1, bestRSSI = -100;
 
@@ -128,7 +70,7 @@ void connectBestWiFi() {
   }
 
   if (bestIndex >= 0) {
-    Serial.println("Attempting to connect to: " + String(knownNetworks[bestIndex].ssid));
+    Serial.println("📶 [WiFi] Attempting to connect to: " + String(knownNetworks[bestIndex].ssid));
     WiFi.begin(knownNetworks[bestIndex].ssid, knownNetworks[bestIndex].password);
     unsigned long startAttempt = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 10000) {
@@ -136,12 +78,17 @@ void connectBestWiFi() {
       Serial.print(".");
     }
     if (WiFi.status() == WL_CONNECTED) {
-      Serial.println("\n🚀 WiFi Connected: " + String(knownNetworks[bestIndex].ssid));
+      if (currentSSID != WiFi.SSID()) {
+        Serial.println("\n🟢 [WiFi] Connected to: " + String(WiFi.SSID()) + " | IP: " + WiFi.localIP().toString());
+        currentSSID = WiFi.SSID();
+      } else {
+        Serial.println("\n🟢 [WiFi] Connected to: " + String(WiFi.SSID()));
+      }
     } else {
-      Serial.println("\n❌ Failed to connect to WiFi after timeout");
+      Serial.println("\n❌ [WiFi] Failed to connect to WiFi after timeout");
     }
   } else {
-    Serial.println("❌ No known WiFi found");
+    Serial.println("❌ [WiFi] No known WiFi found");
   }
 }
 
@@ -151,7 +98,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
 
   DynamicJsonDocument doc(128);
   if (deserializeJson(doc, message)) {
-    Serial.println("Failed to parse JSON");
+    Serial.println("❌ [MQTT] Failed to parse JSON");
     return;
   }
 
@@ -165,43 +112,35 @@ void callback(char* topic, byte* payload, unsigned int length) {
     bool helmetWorn = doc["helmet_worn"];
     int ledHelmet = doc["led_helmet"];
 
-    Blynk.virtualWrite(V0, temp);      
-    Blynk.virtualWrite(V1, hum);      
-    Blynk.virtualWrite(V2, gas ? 1 : 0); // Update Gas Level LED (V2)
+    Blynk.virtualWrite(V0, temp);
+    Blynk.virtualWrite(V1, hum);
+    Blynk.virtualWrite(V2, gas ? 1 : 0);
     Blynk.virtualWrite(V3, ledHelmet);
-    Blynk.virtualWrite(V4, force);    
+    Blynk.virtualWrite(V4, force);
     digitalWrite(LED_TEMP_HUM, !helmetWorn ? HIGH : LOW);
 
-    String sensorData = "T=" + String(temp) + "C, H=" + String(hum) + "%, Gas=" + String(gas ? "YES" : "NO") + ", Force=" + String(force) + ", LED Helmet=" + String(ledHelmet ? "ON" : "OFF") + ", Helmet=" + String(helmetWorn ? "Worn" : "Not Worn");
-    Serial.println("📊 Sensor Data: " + sensorData);
-    // Send sensor data to Google Sheet
-    sendToGoogleSheet("sensor", sensorData);
+    Serial.println("📊 [Sensor] T=" + String(temp) + "C, H=" + String(hum) + "%, Gas=" + String(gas ? "YES" : "NO") + ", Force=" + String(force) + ", LED Helmet=" + String(ledHelmet ? "ON" : "OFF") + ", Helmet=" + String(helmetWorn ? "Worn" : "Not Worn"));
 
-    // Handle gas detection for LED and event
     if (gas) {
       if (!gasDetected) {
         gasDetected = true;
-        Blynk.virtualWrite(V2, 1); // Ensure Gas Level LED is on
-        Blynk.virtualWrite(V5, 1); // Signal gas alert event
-        Serial.println("🚨 Gas detected! Gas Level LED turned ON, event signaled on V5");
-        // Send gas detection alert to Google Sheet
-        sendToGoogleSheet("alert", "Gas detected");
+        Blynk.virtualWrite(V2, 1);
+        Blynk.virtualWrite(V5, 1);
+        Serial.println("🚨 Gas detected! LED D2 turned ON, event signaled on V5");
       }
     } else {
       if (gasDetected) {
         gasDetected = false;
-        Blynk.virtualWrite(V2, 0); // Turn off Gas Level LED
-        Blynk.virtualWrite(V5, 0); // Clear gas alert event
-        Serial.println("Gas cleared. Gas Level LED turned OFF, event cleared on V5");
-        // Send gas cleared alert to Google Sheet
-        sendToGoogleSheet("alert", "Gas cleared");
+        Blynk.virtualWrite(V2, 0);
+        Blynk.virtualWrite(V5, 0);
+        Serial.println("✅ Gas cleared. LED D2 turned OFF, event cleared on V5");
       }
     }
   }
   else if (String(topic) == TOPIC_ALERT) {
     if (doc.containsKey("alert") && doc["alert"]) {
       bool triggerBuzzer = false;
-      String alertMsg = "⚠️ Alert: ";
+      String alertMsg = "⚠️ [Alert]: ";
       if (doc.containsKey("temp_hum") && doc["temp_hum"]) {
         alertMsg += "Temp/Hum, ";
         triggerBuzzer = true;
@@ -210,11 +149,9 @@ void callback(char* topic, byte* payload, unsigned int length) {
         alertMsg += "Gas, ";
         if (!gasDetected) {
           gasDetected = true;
-          Blynk.virtualWrite(V2, 1); // Ensure Gas Level LED is on
-          Blynk.virtualWrite(V5, 1); // Signal gas alert event
-          Serial.println("🚨 Gas alert from TOPIC_ALERT! Gas Level LED turned ON, event signaled on V5");
-          // Send gas alert to Google Sheet
-          sendToGoogleSheet("alert", "Gas alert from TOPIC_ALERT");
+          Blynk.virtualWrite(V2, 1);
+          Blynk.virtualWrite(V5, 1);
+          Serial.println("🚨 Gas alert from TOPIC_ALERT! LED D2 turned ON, event signaled on V5");
         }
       }
       if (doc.containsKey("impact") && doc["impact"]) {
@@ -230,12 +167,10 @@ void callback(char* topic, byte* payload, unsigned int length) {
           if (!helmetWorn) {
             alertMsg += "Helmet Not Worn, ";
             triggerBuzzer = true;
-            Blynk.virtualWrite(V5, 1); // Signal helmet not worn alert
-            Serial.println("Helmet not worn signaled on V5");
-            // Send helmet not worn alert to Google Sheet
-            sendToGoogleSheet("alert", "Helmet not worn");
+            Blynk.virtualWrite(V5, 1);
+            Serial.println("🚨 Helmet not worn signaled on V5");
           } else {
-            Blynk.virtualWrite(V5, 0); // Clear alert if helmet is worn
+            Blynk.virtualWrite(V5, 0);
           }
         }
       }
@@ -247,22 +182,20 @@ void callback(char* topic, byte* payload, unsigned int length) {
         digitalWrite(LED_TEMP_HUM, !lastHelmetWorn ? HIGH : LOW);
       }
       Serial.println(alertMsg);
-      // Send alert message to Google Sheet
-      sendToGoogleSheet("alert", alertMsg);
     } else {
       if (gasDetected) {
         gasDetected = false;
-        Blynk.virtualWrite(V2, 0); // Turn off Gas Level LED
-        Blynk.virtualWrite(V5, 0); // Clear alert
-        Serial.println("Gas alert cleared from TOPIC_ALERT. Gas Level LED turned OFF, event cleared on V5");
-        // Send gas alert cleared to Google Sheet
-        sendToGoogleSheet("alert", "Gas alert cleared from TOPIC_ALERT");
+        Blynk.virtualWrite(V2, 0);
+        Blynk.virtualWrite(V5, 0);
+        Serial.println("✅ Gas alert cleared from TOPIC_ALERT. LED D2 turned OFF, event cleared on V5");
       }
     }
   }
   else if (String(topic) == TOPIC_BUTTON_STATUS) {
     if (doc["button"] == "pressed") {
       int pressCount = doc["pressCount"];
+      // In thông báo khi nhận được tín hiệu bấm nút từ sender
+      Serial.println("[ButtonS] Received press, Count: " + String(pressCount));
       digitalWrite(LED_BUTTON, HIGH);
       delay(200);
       digitalWrite(LED_BUTTON, LOW);
@@ -280,9 +213,19 @@ void callback(char* topic, byte* payload, unsigned int length) {
       digitalWrite(LED_BUTTON, HIGH);
       delay(200);
       digitalWrite(LED_BUTTON, LOW);
-      Serial.println("🚨 Manual trigger activated");
-      // Send manual trigger to Google Sheet
-      sendToGoogleSheet("alert", "Manual trigger activated");
+    }
+    if (doc.containsKey("led_d2") && doc["led_d2"] == true) {
+      gasDetected = true;
+      digitalWrite(LED_BUTTON, HIGH);
+      Blynk.virtualWrite(V2, 1);
+      Blynk.virtualWrite(V5, 1);
+      Serial.println("🚨 Gas detected via TOPIC_MANUAL_TRIGGER! LED D2 turned ON, event signaled on V5");
+    }
+  }
+  else if (String(topic) == TOPIC_WIFI_STATUS) {
+    if (doc.containsKey("ssid")) {
+      senderSSID = doc["ssid"].as<String>();
+      Serial.println("[WiFi] Sender connected to: " + senderSSID);
     }
   }
 }
@@ -295,9 +238,10 @@ void reconnect() {
       client.subscribe(TOPIC_BUTTON_STATUS);
       client.subscribe(TOPIC_MANUAL_TRIGGER);
       client.subscribe(TOPIC_ALERT);
-      Serial.println("📡 MQTT Connected");
+      client.subscribe(TOPIC_WIFI_STATUS);
+      Serial.println("📡 [MQTT] Connected");
     } else {
-      Serial.println("Failed to connect to MQTT, retrying in 5 seconds...");
+      Serial.println("❌ [MQTT] Failed to connect, retrying in 5 seconds...");
       delay(5000);
     }
   }
@@ -342,10 +286,9 @@ void setup() {
   espClient.setInsecure();
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(callback);
-  // Initialize Blynk virtual pins to ensure correct initial state
-  Blynk.virtualWrite(V2, 0); // Gas Level LED off
-  Blynk.virtualWrite(V5, 0); // Clear any initial alert
-  Serial.println("Setup completed!");
+  Blynk.virtualWrite(V2, 0);
+  Blynk.virtualWrite(V5, 0);
+  Serial.println("[SETUP] Setup completed!");
 }
 
 void loop() {
@@ -353,8 +296,15 @@ void loop() {
   client.loop();
   Blynk.run();
   checkManualButton();
+
+  // In SSID của sender mỗi 10s
+  unsigned long now = millis();
+  if (now - lastWiFiStatusPrint >= WIFI_STATUS_INTERVAL && senderSSID != "") {
+    Serial.println("[WiFi] Sender connected to: " + senderSSID);
+    lastWiFiStatusPrint = now;
+  }
+
   if (blinking) {
-    unsigned long now = millis();
     if (now - lastBlinkTime >= blinkInterval) {
       digitalWrite(LED_BLINK, !digitalRead(LED_BLINK));
       lastBlinkTime = now;
@@ -366,5 +316,7 @@ void loop() {
   }
   digitalWrite(LED_BUTTON, gasDetected ? HIGH : LOW);
 }
+
+
 
 
